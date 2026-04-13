@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STYLE INJECTION — Inter font + global CSS + animation classes
