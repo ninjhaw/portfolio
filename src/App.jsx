@@ -60,7 +60,7 @@ const esc = v =>
 const ADMIN_USER  = import.meta.env.VITE_ADMIN_USER;
 const ADMIN_PASS  = import.meta.env.VITE_ADMIN_PASS;
 const MAX_TRIES   = 10;
-const LOCK_MS     = 15 * 60 * 1000;
+const LOCK_MS     = 1 * 60 * 1000;
 
 // Secret admin access — values loaded from environment variables only
 // Method 1: URL query param  →  yoursite.com?portal=TOKEN  (TOKEN set in VITE_ADMIN_TOKEN)
