@@ -58,17 +58,14 @@ const esc = v =>
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
 const ADMIN_USER  = import.meta.env.VITE_ADMIN_USER;
-const ADMIN_PASS  = import.meta.env.VITE_ADMIN_PASS;  
+const ADMIN_PASS  = import.meta.env.VITE_ADMIN_PASS;
 const MAX_TRIES   = 5;
 const LOCK_MS     = 15 * 60 * 1000;
 
-// Secret admin access — two methods:
-//   1. URL hash:         yoursite.com/#_jp-ctrl
-//   2. Keyboard:         Ctrl + Shift + A
-const SECRET_HASH = "#_jp-ctrl";
-const SECRET_KEY  = { ctrl: true, shift: true, key: "A" };
+// Secret admin access — values loaded from environment variables only
+const SECRET_HASH = import.meta.env.VITE_SECRET_HASH;
+const SECRET_KEY  = { ctrl: true, shift: true, key: import.meta.env.VITE_SECRET_KEY };
 
-const DK = "pf_v5_data";
 const SK = "pf_v5_sess";
 const LK = "pf_v5_lock";
 
@@ -89,111 +86,56 @@ const C = {
   f:     "'Inter', -apple-system, sans-serif",
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
-// DEFAULT DATA
-// ══════════════════════════════════════════════════════════════════════════════
-const INIT = {
-  hero: {
-    name: "Joshua Ehd Silvio",
-    title: "Power BI Developer",
-    tagline: "I transform complex raw data into clear, actionable dashboards that help businesses make smarter, faster decisions.",
-    location: "Cebu City, Cebu Philippines",
-    email: "joshuaehd.silvio.37@gmail.com",
-    years: "1-3 years",
-    resumeUrl: "",
-  },
-  about: { bio: "" },
-  skills: [
-    { id: "s1", name: "Power BI",   category: "Data & Analytics" },
-    { id: "s2", name: "Python",     category: "Programming" },
-    { id: "s3", name: "SQL",        category: "Database" },
-  ],
-  experience: [],
-  projects:   [],
-  education:  [],
-};
-
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 
-function mergeData(def, saved) {
-  const out = { ...def };
-  for (const k of Object.keys(saved)) {
-    if (k in def && typeof def[k] === "object" && !Array.isArray(def[k]) && def[k] !== null)
-      out[k] = { ...def[k], ...saved[k] };
-    else out[k] = saved[k];
-  }
-  return out;
-}
-
+// ── useData — reads and writes go directly to Supabase ──────────────────────
 function useData() {
-  const [data, setData]       = useState(() => {
-    // Show cached data instantly while Supabase loads (no blank flash)
-    try {
-      const r = localStorage.getItem(DK);
-      return r ? mergeData(INIT, JSON.parse(r)) : { ...INIT };
-    } catch {
-      return { ...INIT };
-    }
-  });
+  const [data,    setData]    = useState(null);  // null = not yet loaded
   const [loading, setLoading] = useState(true);
-  const [syncErr, setSyncErr] = useState(null);
- 
-  // ── Load from Supabase on mount ──
+  const [error,   setError]   = useState(null);
+
+  // Load from Supabase once on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { data: rows, error } = await supabase
+        const { data: rows, error: err } = await supabase
           .from("portfolio_data")
           .select("data")
           .eq("id", 1)
           .single();
- 
-        if (error) throw error;
- 
-        if (!cancelled && rows?.data && Object.keys(rows.data).length > 0) {
-          const merged = mergeData(INIT, rows.data);
-          setData(merged);
-          // Keep localStorage in sync as a cache
-          try { localStorage.setItem(DK, JSON.stringify(merged)); } catch {}
-        }
+
+        if (err) throw err;
+        if (!cancelled) setData(rows?.data ?? {});
       } catch (err) {
-        console.warn("[useData] Supabase load failed, using localStorage cache:", err.message);
-        setSyncErr("Could not reach database. Showing cached data.");
+        console.error("[useData] Failed to load from Supabase:", err.message);
+        if (!cancelled) setError("Could not load portfolio data. Please check your connection.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
- 
-  // ── Save to Supabase + localStorage on every update ──
+
+  // Save a section to Supabase — optimistic update so UI feels instant
   const update = (key, val) => {
-    setData(prev => {
-      const next = { ...prev, [key]: val };
- 
-      // 1. Update localStorage immediately (instant UI, works offline)
-      try { localStorage.setItem(DK, JSON.stringify(next)); } catch {}
- 
-      // 2. Persist to Supabase in the background
-      (async () => {
-        try {
-          const { error } = await supabase
-            .from("portfolio_data")
-            .update({ data: next, updated_at: new Date().toISOString() })
-            .eq("id", 1);
-          if (error) throw error;
-        } catch (err) {
-          console.error("[useData] Supabase save failed:", err.message);
-          // Data is still in localStorage — won't be lost
-        }
-      })();
- 
-      return next;
-    });
+    const next = { ...data, [key]: val };
+    setData(next);
+
+    (async () => {
+      try {
+        const { error: err } = await supabase
+          .from("portfolio_data")
+          .update({ data: next, updated_at: new Date().toISOString() })
+          .eq("id", 1);
+        if (err) throw err;
+      } catch (err) {
+        console.error("[useData] Failed to save to Supabase:", err.message);
+      }
+    })();
   };
- 
-  return [data, update, loading, syncErr];
+
+  return [data, update, loading, error];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1547,7 +1489,7 @@ function EduAdmin({ data, update, showToast }) {
 // APP ROOT — secret admin access wiring
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [data, update] = useData();
+  const [data, update, loading, error] = useData();
   const [view, setView] = useState("portfolio");
 
   useEffect(() => {
@@ -1556,7 +1498,7 @@ export default function App() {
     // Restore session if already logged in
     if (sessionStorage.getItem(SK)) { setView("admin"); return; }
 
-    // Method 1: secret URL hash → yoursite.com/#_jp-ctrl
+    // Method 1: secret URL hash (set via VITE_SECRET_HASH env variable)
     const checkHash = () => {
       if (window.location.hash === SECRET_HASH) {
         history.replaceState(null, "", window.location.pathname);
@@ -1566,7 +1508,7 @@ export default function App() {
     checkHash();
     window.addEventListener("hashchange", checkHash);
 
-    // Method 2: Ctrl + Shift + A
+    // Method 2: keyboard shortcut (set via VITE_SECRET_KEY env variable)
     const handleKey = e => {
       if (e.ctrlKey === SECRET_KEY.ctrl && e.shiftKey === SECRET_KEY.shift && e.key === SECRET_KEY.key) {
         e.preventDefault();
@@ -1582,6 +1524,40 @@ export default function App() {
   }, []);
 
   const logout = () => { sessionStorage.removeItem(SK); setView("portfolio"); };
+
+  // ── Loading screen ──
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: "#060d1f", display: "flex",
+      alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 20 }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ width: 48, height: 48, borderRadius: "50%",
+        border: "3px solid #1a2d50", borderTopColor: "#3b82f6",
+        animation: "spin 0.8s linear infinite" }} />
+      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: "#94a3b8", margin: 0 }}>
+        Loading portfolio...
+      </p>
+    </div>
+  );
+
+  // ── Error screen ──
+  if (error) return (
+    <div style={{ minHeight: "100vh", background: "#060d1f", display: "flex",
+      alignItems: "center", justifyContent: "center", flexDirection: "column",
+      gap: 16, padding: 32, textAlign: "center" }}>
+      <i className="fas fa-exclamation-triangle" style={{ fontSize: 40, color: "#f87171" }} />
+      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 16,
+        color: "#f1f5f9", margin: 0, fontWeight: 600 }}>Something went wrong</p>
+      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: "#94a3b8", margin: 0 }}>
+        {error}
+      </p>
+      <button onClick={() => window.location.reload()}
+        style={{ marginTop: 8, padding: "10px 24px", borderRadius: 8, border: "none",
+          background: "#3b82f6", color: "#fff", fontSize: 14, fontWeight: 600,
+          cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>
+        Try Again
+      </button>
+    </div>
+  );
 
   if (view === "login") return <AdminLogin onSuccess={() => setView("admin")} onBack={() => setView("portfolio")} />;
   if (view === "admin") return <AdminDashboard data={data} update={update} onLogout={logout} onViewPortfolio={() => setView("portfolio")} />;
