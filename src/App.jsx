@@ -59,7 +59,7 @@ const esc = v =>
 // ══════════════════════════════════════════════════════════════════════════════
 const ADMIN_USER  = import.meta.env.VITE_ADMIN_USER;
 const ADMIN_PASS  = import.meta.env.VITE_ADMIN_PASS;
-const MAX_TRIES   = 5;
+const MAX_TRIES   = 10;
 const LOCK_MS     = 15 * 60 * 1000;
 
 // Secret admin access — values loaded from environment variables only
