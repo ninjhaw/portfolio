@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STYLE INJECTION — Inter font + global CSS + animation classes
@@ -125,16 +126,74 @@ function mergeData(def, saved) {
 }
 
 function useData() {
-  const [data, setData] = useState(() => {
-    try { const r = localStorage.getItem(DK); return r ? mergeData(INIT, JSON.parse(r)) : { ...INIT }; }
-    catch { return { ...INIT }; }
+  const [data, setData]       = useState(() => {
+    // Show cached data instantly while Supabase loads (no blank flash)
+    try {
+      const r = localStorage.getItem(DK);
+      return r ? mergeData(INIT, JSON.parse(r)) : { ...INIT };
+    } catch {
+      return { ...INIT };
+    }
   });
-  const update = (key, val) => setData(prev => {
-    const next = { ...prev, [key]: val };
-    try { localStorage.setItem(DK, JSON.stringify(next)); } catch {}
-    return next;
-  });
-  return [data, update];
+  const [loading, setLoading] = useState(true);
+  const [syncErr, setSyncErr] = useState(null);
+ 
+  // ── Load from Supabase on mount ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: rows, error } = await supabase
+          .from("portfolio_data")
+          .select("data")
+          .eq("id", 1)
+          .single();
+ 
+        if (error) throw error;
+ 
+        if (!cancelled && rows?.data && Object.keys(rows.data).length > 0) {
+          const merged = mergeData(INIT, rows.data);
+          setData(merged);
+          // Keep localStorage in sync as a cache
+          try { localStorage.setItem(DK, JSON.stringify(merged)); } catch {}
+        }
+      } catch (err) {
+        console.warn("[useData] Supabase load failed, using localStorage cache:", err.message);
+        setSyncErr("Could not reach database. Showing cached data.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+ 
+  // ── Save to Supabase + localStorage on every update ──
+  const update = (key, val) => {
+    setData(prev => {
+      const next = { ...prev, [key]: val };
+ 
+      // 1. Update localStorage immediately (instant UI, works offline)
+      try { localStorage.setItem(DK, JSON.stringify(next)); } catch {}
+ 
+      // 2. Persist to Supabase in the background
+      (async () => {
+        try {
+          const { error } = await supabase
+            .from("portfolio_data")
+            .update({ data: next, updated_at: new Date().toISOString() })
+            .eq("id", 1);
+          if (error) throw error;
+        } catch (err) {
+          console.error("[useData] Supabase save failed:", err.message);
+          // Data is still in localStorage — won't be lost
+        }
+      })();
+ 
+      return next;
+    });
+  };
+ 
+  return [data, update, loading, syncErr];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1476,7 +1535,7 @@ function EduAdmin({ data, update, showToast }) {
 // APP ROOT — secret admin access wiring
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [data, update] = useData();
+  const [data, update] =  useData();
   const [view, setView] = useState("portfolio");
 
   useEffect(() => {
