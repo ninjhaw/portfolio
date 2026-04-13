@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STYLE INJECTION — Inter font + global CSS + animation classes
@@ -57,8 +56,8 @@ const esc = v =>
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
-const ADMIN_USER  = "iamadmin";
-const ADMIN_PASS  = "Iamthegoat_011";
+const ADMIN_USER  = import.meta.env.VITE_ADMIN_USER;
+const ADMIN_PASS  = import.meta.env.VITE_ADMIN_PASS;  
 const MAX_TRIES   = 5;
 const LOCK_MS     = 15 * 60 * 1000;
 
@@ -126,74 +125,16 @@ function mergeData(def, saved) {
 }
 
 function useData() {
-  const [data, setData]       = useState(() => {
-    // Show cached data instantly while Supabase loads (no blank flash)
-    try {
-      const r = localStorage.getItem(DK);
-      return r ? mergeData(INIT, JSON.parse(r)) : { ...INIT };
-    } catch {
-      return { ...INIT };
-    }
+  const [data, setData] = useState(() => {
+    try { const r = localStorage.getItem(DK); return r ? mergeData(INIT, JSON.parse(r)) : { ...INIT }; }
+    catch { return { ...INIT }; }
   });
-  const [loading, setLoading] = useState(true);
-  const [syncErr, setSyncErr] = useState(null);
- 
-  // ── Load from Supabase on mount ──
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: rows, error } = await supabase
-          .from("portfolio_data")
-          .select("data")
-          .eq("id", 1)
-          .single();
- 
-        if (error) throw error;
- 
-        if (!cancelled && rows?.data && Object.keys(rows.data).length > 0) {
-          const merged = mergeData(INIT, rows.data);
-          setData(merged);
-          // Keep localStorage in sync as a cache
-          try { localStorage.setItem(DK, JSON.stringify(merged)); } catch {}
-        }
-      } catch (err) {
-        console.warn("[useData] Supabase load failed, using localStorage cache:", err.message);
-        setSyncErr("Could not reach database. Showing cached data.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
- 
-  // ── Save to Supabase + localStorage on every update ──
-  const update = (key, val) => {
-    setData(prev => {
-      const next = { ...prev, [key]: val };
- 
-      // 1. Update localStorage immediately (instant UI, works offline)
-      try { localStorage.setItem(DK, JSON.stringify(next)); } catch {}
- 
-      // 2. Persist to Supabase in the background
-      (async () => {
-        try {
-          const { error } = await supabase
-            .from("portfolio_data")
-            .update({ data: next, updated_at: new Date().toISOString() })
-            .eq("id", 1);
-          if (error) throw error;
-        } catch (err) {
-          console.error("[useData] Supabase save failed:", err.message);
-          // Data is still in localStorage — won't be lost
-        }
-      })();
- 
-      return next;
-    });
-  };
- 
-  return [data, update, loading, syncErr];
+  const update = (key, val) => setData(prev => {
+    const next = { ...prev, [key]: val };
+    try { localStorage.setItem(DK, JSON.stringify(next)); } catch {}
+    return next;
+  });
+  return [data, update];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -802,9 +743,9 @@ function Footer({ data }) {
           <span style={{ color: C.txt, fontWeight: 600 }}>{data.hero.name}</span>.
           All rights reserved.
         </span>
-        {/* <span style={{ fontFamily: C.f, fontSize: 13, color: C.muted }}>
+        <span style={{ fontFamily: C.f, fontSize: 13, color: C.muted }}>
           Built with <span style={{ color: C.ac, fontWeight: 600 }}>React</span>
-        </span> */}
+        </span>
       </div>
     </footer>
   );
@@ -1206,18 +1147,10 @@ function SkillsAdmin({ data, update, showToast }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN — EXPERIENCE EDITOR
 // ══════════════════════════════════════════════════════════════════════════════
-function ExpAdmin({ data, update, showToast }) {
-  const blank = { position: "", company: "", startDate: "", endDate: "", description: "" };
-  const [items, setItems] = useState([...data.experience]);
-  const [form, setForm] = useState(blank);
-  const [editing, setEditing] = useState(null);
 
-  const sync     = i => { setItems(i); update("experience", i); };
-  const add      = () => { if (!form.position.trim() || !form.company.trim()) return; sync([...items, { id: uid(), ...form }]); showToast("Added!"); setForm(blank); };
-  const remove   = id => { sync(items.filter(i => i.id !== id)); showToast("Removed."); };
-  const saveEdit = () => { sync(items.map(i => i.id === editing.id ? editing : i)); showToast("Updated!"); setEditing(null); };
-
-  const EForm = ({ val, set }) => (
+// ✅ Defined OUTSIDE ExpAdmin so React never remounts it on re-render
+function EForm({ val, set }) {
+  return (
     <>
       <Field label="Job Title">
         <Inp value={val.position} onChange={e => set({ ...val, position: e.target.value })} placeholder="e.g. Power BI Developer" />
@@ -1239,6 +1172,18 @@ function ExpAdmin({ data, update, showToast }) {
       </Field>
     </>
   );
+}
+
+function ExpAdmin({ data, update, showToast }) {
+  const blank = { position: "", company: "", startDate: "", endDate: "", description: "" };
+  const [items, setItems] = useState([...data.experience]);
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+
+  const sync     = i => { setItems(i); update("experience", i); };
+  const add      = () => { if (!form.position.trim() || !form.company.trim()) return; sync([...items, { id: uid(), ...form }]); showToast("Added!"); setForm(blank); };
+  const remove   = id => { sync(items.filter(i => i.id !== id)); showToast("Removed."); };
+  const saveEdit = () => { sync(items.map(i => i.id === editing.id ? editing : i)); showToast("Updated!"); setEditing(null); };
 
   return (
     <ASection eyebrow="Section · Experience" title="Work Experience">
@@ -1347,18 +1292,10 @@ function ImageUploader({ value, onChange }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN — PROJECTS EDITOR
 // ══════════════════════════════════════════════════════════════════════════════
-function ProjAdmin({ data, update, showToast }) {
-  const blank = { title: "", description: "", imageData: "", tags: "" };
-  const [items, setItems] = useState([...data.projects]);
-  const [form, setForm] = useState(blank);
-  const [editing, setEditing] = useState(null);
 
-  const sync     = i => { setItems(i); update("projects", i); };
-  const add      = () => { if (!form.title.trim()) return; sync([...items, { id: uid(), ...form }]); showToast("Project added!"); setForm(blank); };
-  const remove   = id => { sync(items.filter(i => i.id !== id)); showToast("Removed."); };
-  const saveEdit = () => { sync(items.map(i => i.id === editing.id ? editing : i)); showToast("Updated!"); setEditing(null); };
-
-  const PForm = ({ val, set }) => (
+// ✅ Defined OUTSIDE ProjAdmin so React never remounts it on re-render
+function PForm({ val, set }) {
+  return (
     <>
       <Field label="Project Title">
         <Inp value={val.title} onChange={e => set({ ...val, title: e.target.value })} placeholder="e.g. Sales Analytics Dashboard" />
@@ -1376,6 +1313,18 @@ function ProjAdmin({ data, update, showToast }) {
       </Field>
     </>
   );
+}
+
+function ProjAdmin({ data, update, showToast }) {
+  const blank = { title: "", description: "", imageData: "", tags: "" };
+  const [items, setItems] = useState([...data.projects]);
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+
+  const sync     = i => { setItems(i); update("projects", i); };
+  const add      = () => { if (!form.title.trim()) return; sync([...items, { id: uid(), ...form }]); showToast("Project added!"); setForm(blank); };
+  const remove   = id => { sync(items.filter(i => i.id !== id)); showToast("Removed."); };
+  const saveEdit = () => { sync(items.map(i => i.id === editing.id ? editing : i)); showToast("Updated!"); setEditing(null); };
 
   return (
     <ASection eyebrow="Section · Projects" title="Projects">
@@ -1449,18 +1398,10 @@ function ProjAdmin({ data, update, showToast }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN — EDUCATION EDITOR
 // ══════════════════════════════════════════════════════════════════════════════
-function EduAdmin({ data, update, showToast }) {
-  const blank = { degree: "", school: "", startYear: "", endYear: "" };
-  const [items, setItems] = useState([...data.education]);
-  const [form, setForm] = useState(blank);
-  const [editing, setEditing] = useState(null);
 
-  const sync     = i => { setItems(i); update("education", i); };
-  const add      = () => { if (!form.degree.trim() || !form.school.trim()) return; sync([...items, { id: uid(), ...form }]); showToast("Added!"); setForm(blank); };
-  const remove   = id => { sync(items.filter(i => i.id !== id)); showToast("Removed."); };
-  const saveEdit = () => { sync(items.map(i => i.id === editing.id ? editing : i)); showToast("Updated!"); setEditing(null); };
-
-  const EdForm = ({ val, set }) => (
+// ✅ Defined OUTSIDE EduAdmin so React never remounts it on re-render
+function EdForm({ val, set }) {
+  return (
     <>
       <Field label="Degree / Course">
         <Inp value={val.degree} onChange={e => set({ ...val, degree: e.target.value })}
@@ -1480,6 +1421,18 @@ function EduAdmin({ data, update, showToast }) {
       </div>
     </>
   );
+}
+
+function EduAdmin({ data, update, showToast }) {
+  const blank = { degree: "", school: "", startYear: "", endYear: "" };
+  const [items, setItems] = useState([...data.education]);
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+
+  const sync     = i => { setItems(i); update("education", i); };
+  const add      = () => { if (!form.degree.trim() || !form.school.trim()) return; sync([...items, { id: uid(), ...form }]); showToast("Added!"); setForm(blank); };
+  const remove   = id => { sync(items.filter(i => i.id !== id)); showToast("Removed."); };
+  const saveEdit = () => { sync(items.map(i => i.id === editing.id ? editing : i)); showToast("Updated!"); setEditing(null); };
 
   return (
     <ASection eyebrow="Section · Education" title="Education">
@@ -1535,7 +1488,7 @@ function EduAdmin({ data, update, showToast }) {
 // APP ROOT — secret admin access wiring
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [data, update] =  useData();
+  const [data, update] = useData();
   const [view, setView] = useState("portfolio");
 
   useEffect(() => {
