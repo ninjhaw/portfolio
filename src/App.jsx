@@ -63,8 +63,9 @@ const MAX_TRIES   = 10;
 const LOCK_MS     = 15 * 60 * 1000;
 
 // Secret admin access — values loaded from environment variables only
-const SECRET_HASH = import.meta.env.VITE_SECRET_HASH;
-const SECRET_KEY  = { ctrl: true, shift: true, key: import.meta.env.VITE_SECRET_KEY };
+// Method 1: URL query param  →  yoursite.com?portal=TOKEN  (TOKEN set in VITE_ADMIN_TOKEN)
+// Method 2: Logo click       →  click the "J." logo 5 times rapidly
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN;
 
 const SK = "pf_v5_sess";
 const LK = "pf_v5_lock";
@@ -248,13 +249,29 @@ const Toast = ({ msg }) => msg ? (
 // ══════════════════════════════════════════════════════════════════════════════
 // NAVIGATION — fully responsive with hamburger menu
 // ══════════════════════════════════════════════════════════════════════════════
-function Nav() {
-  const [open, setOpen] = useState(false);
-  const width = useWindowWidth();
-  const isMobile = width < 768;
-  const links = ["About", "Skills", "Experience", "Projects", "Education", "Contact"];
+function Nav({ onLogoClick }) {
+  const [open, setOpen]     = useState(false);
+  const [clicks, setClicks] = useState(0);
+  const timerRef            = useRef(null);
+  const width               = useWindowWidth();
+  const isMobile            = width < 768;
+  const links               = ["About", "Skills", "Experience", "Projects", "Education", "Contact"];
 
   useEffect(() => { if (!isMobile) setOpen(false); }, [isMobile]);
+
+  // 5-click sequence on logo — resets if 2 seconds pass between clicks
+  const handleLogoClick = e => {
+    e.preventDefault();
+    clearTimeout(timerRef.current);
+    const next = clicks + 1;
+    if (next >= 5) {
+      setClicks(0);
+      onLogoClick?.();
+    } else {
+      setClicks(next);
+      timerRef.current = setTimeout(() => setClicks(0), 2000);
+    }
+  };
 
   return (
     <nav style={{ position: "sticky", top: 0, zIndex: 200,
@@ -265,8 +282,10 @@ function Nav() {
       <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px",
         display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
 
-        {/* Logo */}
-        <a href="#" style={{ fontFamily: C.f, fontSize: 20, fontWeight: 900, color: C.txt, letterSpacing: -.5 }}>
+        {/* Logo — click 5 times rapidly to open admin login */}
+        <a href="#" onClick={handleLogoClick}
+          style={{ fontFamily: C.f, fontSize: 20, fontWeight: 900, color: C.txt,
+            letterSpacing: -.5, userSelect: "none" }}>
           J<span style={{ color: C.ac }}>.</span>
         </a>
 
@@ -755,10 +774,10 @@ function Footer({ data }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // PORTFOLIO VIEW
 // ══════════════════════════════════════════════════════════════════════════════
-function PortfolioView({ data }) {
+function PortfolioView({ data, onLogoClick }) {
   return (
     <div style={{ minHeight: "100vh", background: C.bg }}>
-      <Nav />
+      <Nav onLogoClick={onLogoClick} />
       <Hero data={data} />
       <About data={data} />
       <Skills data={data} />
@@ -1498,29 +1517,13 @@ export default function App() {
     // Restore session if already logged in
     if (sessionStorage.getItem(SK)) { setView("admin"); return; }
 
-    // Method 1: secret URL hash (set via VITE_SECRET_HASH env variable)
-    const checkHash = () => {
-      if (window.location.hash === SECRET_HASH) {
-        history.replaceState(null, "", window.location.pathname);
-        setView("login");
-      }
-    };
-    checkHash();
-    window.addEventListener("hashchange", checkHash);
-
-    // Method 2: keyboard shortcut (set via VITE_SECRET_KEY env variable)
-    const handleKey = e => {
-      if (e.ctrlKey === SECRET_KEY.ctrl && e.shiftKey === SECRET_KEY.shift && e.key === SECRET_KEY.key) {
-        e.preventDefault();
-        setView("login");
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-
-    return () => {
-      window.removeEventListener("hashchange", checkHash);
-      window.removeEventListener("keydown", handleKey);
-    };
+    // Method 1: URL query param — yoursite.com?portal=TOKEN
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("portal") === ADMIN_TOKEN) {
+      // Strip the query param from the URL so it doesn't linger in browser history
+      history.replaceState(null, "", window.location.pathname);
+      setView("login");
+    }
   }, []);
 
   const logout = () => { sessionStorage.removeItem(SK); setView("portfolio"); };
@@ -1561,5 +1564,5 @@ export default function App() {
 
   if (view === "login") return <AdminLogin onSuccess={() => setView("admin")} onBack={() => setView("portfolio")} />;
   if (view === "admin") return <AdminDashboard data={data} update={update} onLogout={logout} onViewPortfolio={() => setView("portfolio")} />;
-  return <PortfolioView data={data} />;
+  return <PortfolioView data={data} onLogoClick={() => setView("login")} />;
 }
