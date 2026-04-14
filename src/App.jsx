@@ -763,9 +763,10 @@ function Footer({ data }) {
           <span style={{ color: C.txt, fontWeight: 600 }}>{data.hero.name}</span>.
           All rights reserved.
         </span>
+{/*         
         <span style={{ fontFamily: C.f, fontSize: 13, color: C.muted }}>
           Built with <span style={{ color: C.ac, fontWeight: 600 }}>React</span>
-        </span>
+        </span>  */}
       </div>
     </footer>
   );
