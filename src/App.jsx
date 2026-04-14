@@ -59,8 +59,8 @@ const esc = v =>
 // ══════════════════════════════════════════════════════════════════════════════
 const ADMIN_USER  = import.meta.env.VITE_ADMIN_USER;
 const ADMIN_PASS  = import.meta.env.VITE_ADMIN_PASS;
-const MAX_TRIES   = 10;
-const LOCK_MS     = 1 * 60 * 1000;
+const MAX_TRIES   = 5;
+const LOCK_MS     = 15 * 60 * 1000;
 
 // Secret admin access — values loaded from environment variables only
 // Method 1: URL query param  →  yoursite.com?portal=TOKEN  (TOKEN set in VITE_ADMIN_TOKEN)
@@ -424,21 +424,27 @@ function Hero({ data }) {
               ))}
             </div>
 
-            {/* Social icons */}
+            {/* Social icons — URLs managed from Admin > Hero */}
             <div style={{ display: "flex", gap: 10 }}>
               {[
-                { icon: "fab fa-github",   title: "GitHub" },
-                { icon: "fab fa-linkedin", title: "LinkedIn" },
-                { icon: "fab fa-facebook", title: "Facebook" },
-              ].map(({ icon, title }) => (
-                <div key={title} className="pf-social" title={title}
-                  style={{ width: 42, height: 42, borderRadius: 10, background: C.bgC,
-                    border: `1px solid ${C.bdr}`, display: "flex", alignItems: "center",
-                    justifyContent: "center", color: C.muted, cursor: "default",
-                    fontSize: 17, transition: "all .2s" }}>
-                  <i className={icon} />
-                </div>
-              ))}
+                { icon: "fab fa-github",   title: "GitHub",   url: h.githubUrl },
+                { icon: "fab fa-linkedin", title: "LinkedIn", url: h.linkedinUrl },
+                { icon: "fab fa-facebook", title: "Facebook", url: h.facebookUrl },
+              ].map(({ icon, title, url }) => {
+                const inner = (
+                  <div className="pf-social" title={title}
+                    style={{ width: 42, height: 42, borderRadius: 10, background: C.bgC,
+                      border: `1px solid ${C.bdr}`, display: "flex", alignItems: "center",
+                      justifyContent: "center", color: C.muted, fontSize: 17,
+                      transition: "all .2s", cursor: url ? "pointer" : "default" }}>
+                    <i className={icon} />
+                  </div>
+                );
+                return url
+                  ? <a key={title} href={url} target="_blank" rel="noreferrer"
+                      style={{ textDecoration: "none" }}>{inner}</a>
+                  : <div key={title}>{inner}</div>;
+              })}
             </div>
           </div>
 
@@ -763,10 +769,9 @@ function Footer({ data }) {
           <span style={{ color: C.txt, fontWeight: 600 }}>{data.hero.name}</span>.
           All rights reserved.
         </span>
-{/*         
         <span style={{ fontFamily: C.f, fontSize: 13, color: C.muted }}>
           Built with <span style={{ color: C.ac, fontWeight: 600 }}>React</span>
-        </span>  */}
+        </span>
       </div>
     </footer>
   );
@@ -1055,6 +1060,43 @@ function HeroAdmin({ data, update, showToast }) {
           <Inp type="url" value={form.resumeUrl} onChange={f("resumeUrl")}
             placeholder="https://drive.google.com/your-resume" />
         </Field>
+
+        {/* ── Social Links ── */}
+        <div style={{ margin: "4px 0 20px", paddingTop: 20,
+          borderTop: `1px solid ${C.bdr}` }}>
+          <p style={{ fontFamily: C.f, fontSize: 12, fontWeight: 700, color: C.muted,
+            letterSpacing: 1.1, textTransform: "uppercase", margin: "0 0 18px" }}>
+            Social Links (leave blank to disable)
+          </p>
+          <Field label="GitHub URL">
+            <div style={{ position: "relative" }}>
+              <i className="fab fa-github" style={{ position: "absolute", left: 13,
+                top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 15 }} />
+              <Inp type="url" value={form.githubUrl || ""} onChange={f("githubUrl")}
+                placeholder="https://github.com/yourusername"
+                style={{ paddingLeft: 38 }} />
+            </div>
+          </Field>
+          <Field label="LinkedIn URL">
+            <div style={{ position: "relative" }}>
+              <i className="fab fa-linkedin" style={{ position: "absolute", left: 13,
+                top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 15 }} />
+              <Inp type="url" value={form.linkedinUrl || ""} onChange={f("linkedinUrl")}
+                placeholder="https://linkedin.com/in/yourusername"
+                style={{ paddingLeft: 38 }} />
+            </div>
+          </Field>
+          <Field label="Facebook URL">
+            <div style={{ position: "relative" }}>
+              <i className="fab fa-facebook" style={{ position: "absolute", left: 13,
+                top: "50%", transform: "translateY(-50%)", color: C.muted, fontSize: 15 }} />
+              <Inp type="url" value={form.facebookUrl || ""} onChange={f("facebookUrl")}
+                placeholder="https://facebook.com/yourusername"
+                style={{ paddingLeft: 38 }} />
+            </div>
+          </Field>
+        </div>
+
         <Btn variant="primary" onClick={() => { update("hero", form); showToast("Hero saved!"); }}>
           <i className="fas fa-check" /> Save Changes
         </Btn>
